@@ -1,0 +1,192 @@
+import logging
+import random
+import asyncio
+import json
+from datetime import datetime, timedelta
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
+    filters, ConversationHandler
+)
+
+# Enable logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# Store participants info
+participants = {}  # user_id: {'group': 'A' or 'B', 'username': str, 'start_date': date, 'tasks_sent': int}
+admin_chat_id = "-4618714192"  # Replace with your actual admin chat ID
+
+# Writing instructions
+pre_task_message = """Перед початком:
+• Знайдіть тихе місце, де Вас ніхто не потурбує протягом 15-30 хвилин. Підготуйте папір і ручку, або ваш планшет чи ноутбук (якщо використовуєте електронні пристрої, увімкніть авіарежим, щоб уникнути відволікань).
+• Поставте таймер на 15 хвилин. Якщо вважаєте за потрібне, Ви можете продовжувати писати і після дзвінка таймера.
+• Коли почнете писати, не зупиняйтеся, хіба що Вам буде зовсім важко емоційно."""
+post_task_message = """Закрийте зошит чи документ, в якому писали, і відкладіть його. Якщо треба, можна кілька хвилин посидіти, щоб заспокоїтися. Якщо вам сумно, це нормально, зазвичай це минає за кілька годин, як після перегляду сумного фільму."""
+group_instructions = {
+    "A": """
+Зосередьтеся і напишіть про свої найглибші думки та почуття щодо якоїсь дуже важливої емоційної ситуації, проблеми чи досвіду, які вплинули на Вас і Ваше життя. Ви можете писати про те ж саме, що і минулого разу, чи обрати щось інше. Пишучи, відкрийтеся та дозвольте собі зануритись у найглибші емоції та думки. Опишіть:
+    • Факти про цей досвід,
+    • Емоції, які Ви тоді відчували, та емоції, які відчуваєте зараз,
+    • Зв'язки між цим досвідом та іншими подіями у вашому житті.
+Почавши писати, не зупиняйтеся. Не зважайте на помилки, грамотність, чи сюжет історій, просто викладіть свій досвід на папері. Якщо закінчилися нові ідеї, просто повторюйте те, що вже написали. Пишіть повними реченнями, навіть якщо вони не ідеальні. Ніхто, крім вас, не читатиме цього.""",
+    "B": """Оберіть одну із запропонованих тем та починайте писати, не відволікаючись.
+                • Детально опишіть, що ви зробили з того часу, як прокинулися сьогодні вранці.
+                • Детально опишіть ваші плани на сьогоднішній день. 
+                • Детально опишіть останню подію або захід, які ви відвідували. 
+                • Детально опишіть будь-який предмет, який ви бачите навколо себе чи гарно відому вам будівлю. 
+                • Детально розпишіть як приготувати каву з нуля
+                Важливо, щоб ви описували події саме так, як вони відбувалися. Не згадуйте власні емоції, почуття чи думки. Намагайтеся бути максимально об’єктивними.
+                Після того, як почали писати, не зупиняйтеся. Не зважайте на помилки, грамотність, чи сюжет історій. Якщо закінчилися нові ідеї, просто повторюйте те, що вже написали. Пишіть повними реченнями, навіть якщо вони не ідеальні. Ніхто, крім вас, не читатиме цього."""
+}
+
+# Helper function to assign group and store new participant
+async def register_user(user_id, username, context):
+    if user_id not in participants:
+        group = random.choice(['A', 'B'])
+        participants[user_id] = {
+            'group': group,
+            'username': username,
+            'start_date': datetime.now(),
+            'tasks_sent': 0
+        }
+        await context.bot.send_message(chat_id=user_id, text=f"Welcome! You are in Group {group}.")
+        await schedule_daily_tasks(user_id, context)
+        logger.info(f"New user registered: {user_id} in Group {group}")
+    else:
+        await context.bot.send_message(chat_id=user_id, text="You are already registered.")
+
+# Schedule 4 daily tasks
+async def schedule_daily_tasks(user_id, context):
+    group = participants[user_id]['group']
+    for day in range(4):
+        delay = timedelta(days=day)
+        scheduled_time = datetime.now().replace(hour=9, minute=0, second=0, microsecond=0) + delay
+        wait_seconds = (scheduled_time - datetime.now()).total_seconds()
+        if wait_seconds < 0:
+            wait_seconds = 0
+        asyncio.create_task(send_task_after_delay(user_id, group, wait_seconds, context, day+1))
+
+# Actual task sending
+async def send_task_after_delay(user_id, group, delay_seconds, context, day):
+    await asyncio.sleep(delay_seconds)
+    try:
+        await context.bot.send_message(chat_id=user_id, text=f"Day {day} of 4")
+        await context.bot.send_message(chat_id=user_id, text=pre_task_message)
+        await context.bot.send_message(chat_id=user_id, text=group_instructions[group])
+        await context.bot.send_message(chat_id=user_id, text=post_task_message)
+        participants[user_id]['tasks_sent'] += 1
+
+        # Ask for task completion
+        await asyncio.sleep(60)
+        await context.bot.send_message(chat_id=user_id, text="Did you complete the task? (Yes/No)")
+    except Exception as e:
+        logger.error(f"Error sending task to {user_id}: {e}")
+
+# /start handler
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    await register_user(user.id, user.username, context)
+
+# Load participants from file
+def load_participants():
+    try:
+        with open('participants.json', 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+# Save participants to file
+def save_participants(data):
+    with open('participants.json', 'w') as f:
+        json.dump(data, f)
+
+# Assign task manually to participant
+async def assign(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("Використання: /assign P1234 текст_повідомлення")
+        return
+
+    participant_id = args[0]
+    message_text = " ".join(args[1:])
+
+    participants_data = load_participants()
+    for chat_id, data in participants_data.items():
+        if data["user_id"] == participant_id:
+            await context.bot.send_message(chat_id=int(chat_id), text=message_text)
+            await update.message.reply_text(f"✅ Повідомлення надіслано до {participant_id}")
+            return
+
+    await update.message.reply_text("❌ Учасник не знайдений.")
+
+# === REMOVE YOURSELF ===
+async def clear_me(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id  # Get the chat ID of the user
+    participants_data = load_participants()  # Load the participants data
+
+    # Check if the user is in the participants list
+    if str(chat_id) in participants_data:
+        del participants_data[str(chat_id)]  # Remove the participant
+        save_participants(participants_data)  # Save the updated data back to the file
+        await update.message.reply_text("✅ Ви були видалені з реєстрації.")
+    else:
+        await update.message.reply_text("❌ Ви не зареєстровані у системі.")
+
+# === BROADCAST TO MULTIPLE USERS ===
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if str(update.effective_chat.id) != admin_chat_id:
+        return  # Only admin can broadcast
+    
+    if len(context.args) < 2:
+        await update.message.reply_text("Використання: /broadcast P1234,P5678 текст_повідомлення")
+        return
+
+    # First argument is comma-separated list of participant IDs
+    participant_ids = context.args[0].split(',')
+    message_text = " ".join(context.args[1:])
+    
+    participants_data = load_participants()
+    delivery_status = {}
+    
+    # Send messages and track status for each participant
+    for chat_id, data in participants_data.items():
+        if data["user_id"] in participant_ids:
+            try:
+                await context.bot.send_message(chat_id=int(chat_id), text=message_text)
+                delivery_status[data["user_id"]] = "✅ Доставлено"
+            except Exception as e:
+                delivery_status[data["user_id"]] = f"❌ Помилка: {str(e)}"
+    
+    # Create detailed report
+    status_report = "📬 Статус доставки:\n\n"
+    for p_id in participant_ids:
+        status = delivery_status.get(p_id, "❌ Учасника не знайдено в системі")
+        status_report += f"{p_id}: {status}\n"
+    
+    await update.message.reply_text(status_report)
+
+# === BOT APP ===
+def main():
+    app = ApplicationBuilder().token('BOT_TOKEN').build()
+
+    # Add handlers
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("assign", assign))  # The assign command
+    app.add_handler(CommandHandler("clearme", clear_me))  # Add the clear_me handler
+    app.add_handler(CommandHandler("broadcast", broadcast))  # Add the broadcast handler
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))  # Handling other messages
+
+# Main function to run the bot
+if __name__ == '__main__':
+    import os
+    TOKEN = os.getenv("BOT_TOKEN")
+    application = ApplicationBuilder().token(TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+
+    logger.info("Bot started.")
+    application.run_polling()
