@@ -7,6 +7,7 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes,
     MessageHandler, filters
 )
+import re
 
 # === CONFIG ===
 BOT_TOKEN = "8007679799:AAEwukWrHH38fdkc_8Sp7IeMJmQtYZ10apw"
@@ -121,13 +122,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         chat_id=chat_id,
                         text="Дякую за виконання сьогоднішнього завдання! Завтра Вам буде надіслано наступні інструкції. До зустрічі!"
                     )
-
+                    await context.bot.send_message(chat_id=chat_id,
                     # Closing message
-                    closing_text = """Закрийте зошит чи документ, в якому писали, і відкладіть його. Якщо треба, можна кілька хвилин посидіти, щоб заспокоїтися. Якщо вам сумно, це нормально, зазвичай це минає за кілька годин, як після перегляду сумного фільму.
-                    Коли виконаєте завдання напишіть у чат я виконав перше/друге/третє/четверте завдання"""
-                    await context.bot.send_message(chat_id=chat_id, text=closing_text)
-
-                    # Ask for confirmation after 1 minute
+                         text = """Закрийте зошит чи документ, в якому писали, і відкладіть його. Якщо треба, можна кілька хвилин посидіти, щоб заспокоїтися. Якщо вам сумно, це нормально, зазвичай це минає за кілька годин, як після перегляду сумного фільму.
+                    Коли виконаєте завдання напишіть у чат я виконав перше/друге/третє/четверте завдання""")
                     context.job_queue.run_once(
                         lambda context: context.bot.send_message(chat_id=chat_id, text="Чи виконали ви завдання? (так / ні)"),
                         when=60  # 60 seconds delay
@@ -199,6 +197,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 when=timedelta(days=14),
                 chat_id=chat_id
                     )
+
                 save_participants(participants_data)
                 return
 
