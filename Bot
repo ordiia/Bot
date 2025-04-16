@@ -9,7 +9,7 @@ from telegram.ext import (
 )
 
 # === CONFIG ===
-BOT_TOKEN = "8007679799:AAGekKeFh9L9oWLI35ieOM3ENjCxCKofJow"
+BOT_TOKEN = "8007679799:AAEwukWrHH38fdkc_8Sp7IeMJmQtYZ10apw"
 ADMIN_CHAT_ID = "-4618714192"  # Chat ID where you want logs
 PARTICIPANT_FILE = "participan.json"  # Stores unique participant numbers
 
